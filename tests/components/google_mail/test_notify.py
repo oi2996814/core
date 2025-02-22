@@ -1,4 +1,5 @@
 """Notify tests for the Google Mail integration."""
+
 from unittest.mock import patch
 
 import pytest
@@ -52,7 +53,7 @@ async def test_notify_voluptuous_error(
     """Test voluptuous error thrown when drafting email."""
     await setup_integration()
 
-    with pytest.raises(Invalid) as ex:
+    with pytest.raises(ValueError) as ex:
         await hass.services.async_call(
             NOTIFY_DOMAIN,
             "example_gmail_com",

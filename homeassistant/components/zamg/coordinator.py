@@ -1,4 +1,5 @@
 """Data Update coordinator for ZAMG weather data."""
+
 from __future__ import annotations
 
 from zamg import ZamgData as ZamgDevice
@@ -31,6 +32,7 @@ class ZamgDataUpdateCoordinator(DataUpdateCoordinator[ZamgDevice]):
         super().__init__(
             hass,
             LOGGER,
+            config_entry=entry,
             name=DOMAIN,
             update_interval=MIN_TIME_BETWEEN_UPDATES,
         )
@@ -44,7 +46,7 @@ class ZamgDataUpdateCoordinator(DataUpdateCoordinator[ZamgDevice]):
             device = await self.zamg.update()
         except ZamgNoDataError as error:
             raise UpdateFailed("No response from API") from error
-        except (ZamgError) as error:
+        except ZamgError as error:
             raise UpdateFailed(f"Invalid response from API: {error}") from error
         self.data = device
         self.data["last_update"] = self.zamg.last_update

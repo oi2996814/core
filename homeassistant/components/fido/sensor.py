@@ -1,9 +1,9 @@
-"""
-Support for Fido.
+"""Support for Fido.
 
 Get data from 'Usage Summary' page:
 https://www.fido.ca/pages/#/my-account/wireless
 """
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -14,7 +14,7 @@ from pyfido.client import PyFidoError
 import voluptuous as vol
 
 from homeassistant.components.sensor import (
-    PLATFORM_SCHEMA,
+    PLATFORM_SCHEMA as SENSOR_PLATFORM_SCHEMA,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -28,8 +28,8 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from homeassistant.util import Throttle
@@ -172,7 +172,7 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 
 SENSOR_KEYS: list[str] = [desc.key for desc in SENSOR_TYPES]
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
+PLATFORM_SCHEMA = SENSOR_PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_MONITORED_VARIABLES): vol.All(
             cv.ensure_list, [vol.In(SENSOR_KEYS)]
@@ -215,7 +215,9 @@ async def async_setup_platform(
 class FidoSensor(SensorEntity):
     """Implementation of a Fido sensor."""
 
-    def __init__(self, fido_data, name, number, description: SensorEntityDescription):
+    def __init__(
+        self, fido_data, name, number, description: SensorEntityDescription
+    ) -> None:
         """Initialize the sensor."""
         self.entity_description = description
         self.fido_data = fido_data
@@ -234,11 +236,10 @@ class FidoSensor(SensorEntity):
         if (sensor_type := self.entity_description.key) == "balance":
             if self.fido_data.data.get(sensor_type) is not None:
                 self._attr_native_value = round(self.fido_data.data[sensor_type], 2)
-        else:
-            if self.fido_data.data.get(self._number, {}).get(sensor_type) is not None:
-                self._attr_native_value = round(
-                    self.fido_data.data[self._number][sensor_type], 2
-                )
+        elif self.fido_data.data.get(self._number, {}).get(sensor_type) is not None:
+            self._attr_native_value = round(
+                self.fido_data.data[self._number][sensor_type], 2
+            )
 
 
 class FidoData:

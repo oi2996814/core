@@ -1,25 +1,37 @@
-"""Support for (EMEA/EU-based) Honeywell TCC climate systems."""
-DOMAIN = "evohome"
+"""The constants of the Evohome integration."""
 
-STORAGE_VER = 1
-STORAGE_KEY = DOMAIN
+from __future__ import annotations
 
-# The Parent's (i.e. TCS, Controller's) operating mode is one of:
-EVO_RESET = "AutoWithReset"
-EVO_AUTO = "Auto"
-EVO_AUTOECO = "AutoWithEco"
-EVO_AWAY = "Away"
-EVO_DAYOFF = "DayOff"
-EVO_CUSTOM = "Custom"
-EVO_HEATOFF = "HeatingOff"
+from datetime import timedelta
+from enum import StrEnum, unique
+from typing import Final
 
-# The Children's operating mode is one of:
-EVO_FOLLOW = "FollowSchedule"  # the operating mode is 'inherited' from the TCS
-EVO_TEMPOVER = "TemporaryOverride"
-EVO_PERMOVER = "PermanentOverride"
+DOMAIN: Final = "evohome"
 
-# These are used only to help prevent E501 (line too long) violations
-GWS = "gateways"
-TCS = "temperatureControlSystems"
+STORAGE_VER: Final = 1
+STORAGE_KEY: Final = DOMAIN
 
-UTC_OFFSET = "currentOffsetMinutes"
+CONF_LOCATION_IDX: Final = "location_idx"
+
+USER_DATA: Final = "user_data"
+
+SCAN_INTERVAL_DEFAULT: Final = timedelta(seconds=300)
+SCAN_INTERVAL_MINIMUM: Final = timedelta(seconds=60)
+
+ATTR_SYSTEM_MODE: Final = "mode"
+ATTR_DURATION_DAYS: Final = "period"
+ATTR_DURATION_HOURS: Final = "duration"
+
+ATTR_ZONE_TEMP: Final = "setpoint"
+ATTR_DURATION_UNTIL: Final = "duration"
+
+
+@unique
+class EvoService(StrEnum):
+    """The Evohome services."""
+
+    REFRESH_SYSTEM = "refresh_system"
+    SET_SYSTEM_MODE = "set_system_mode"
+    RESET_SYSTEM = "reset_system"
+    SET_ZONE_OVERRIDE = "set_zone_override"
+    RESET_ZONE_OVERRIDE = "clear_zone_override"

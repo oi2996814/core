@@ -1,10 +1,12 @@
 """Configure tests for the Google Mail integration."""
-from collections.abc import Awaitable, Callable, Generator
+
+from collections.abc import Awaitable, Callable, Coroutine
 import time
+from typing import Any
 from unittest.mock import patch
 
 from httplib2 import Response
-from pytest import fixture
+import pytest
 
 from homeassistant.components.application_credentials import (
     ClientCredential,
@@ -17,7 +19,7 @@ from homeassistant.setup import async_setup_component
 from tests.common import MockConfigEntry, load_fixture
 from tests.test_util.aiohttp import AiohttpClientMocker
 
-ComponentSetup = Callable[[], Awaitable[None]]
+type ComponentSetup = Callable[[], Awaitable[None]]
 
 BUILD = "homeassistant.components.google_mail.api.build"
 CLIENT_ID = "1234"
@@ -33,13 +35,13 @@ TITLE = "example@gmail.com"
 TOKEN = "homeassistant.components.google_mail.api.config_entry_oauth2_flow.OAuth2Session.async_ensure_token_valid"
 
 
-@fixture(name="scopes")
+@pytest.fixture(name="scopes")
 def mock_scopes() -> list[str]:
     """Fixture to set the scopes present in the OAuth token."""
     return SCOPES
 
 
-@fixture(autouse=True)
+@pytest.fixture(autouse=True)
 async def setup_credentials(hass: HomeAssistant) -> None:
     """Fixture to setup credentials."""
     assert await async_setup_component(hass, "application_credentials", {})
@@ -51,13 +53,13 @@ async def setup_credentials(hass: HomeAssistant) -> None:
     )
 
 
-@fixture(name="expires_at")
+@pytest.fixture(name="expires_at")
 def mock_expires_at() -> int:
     """Fixture to set the oauth token expiration time."""
     return time.time() + 3600
 
 
-@fixture(name="config_entry")
+@pytest.fixture(name="config_entry")
 def mock_config_entry(expires_at: int, scopes: list[str]) -> MockConfigEntry:
     """Create Google Mail entry in Home Assistant."""
     return MockConfigEntry(
@@ -76,7 +78,7 @@ def mock_config_entry(expires_at: int, scopes: list[str]) -> MockConfigEntry:
     )
 
 
-@fixture(autouse=True)
+@pytest.fixture(autouse=True)
 def mock_connection(aioclient_mock: AiohttpClientMocker) -> None:
     """Mock Google Mail connection."""
     aioclient_mock.post(
@@ -90,10 +92,10 @@ def mock_connection(aioclient_mock: AiohttpClientMocker) -> None:
     )
 
 
-@fixture(name="setup_integration")
+@pytest.fixture(name="setup_integration")
 async def mock_setup_integration(
     hass: HomeAssistant, config_entry: MockConfigEntry
-) -> Generator[ComponentSetup, None, None]:
+) -> Callable[[], Coroutine[Any, Any, None]]:
     """Fixture for setting up the component."""
     config_entry.add_to_hass(hass)
 
@@ -114,6 +116,6 @@ async def mock_setup_integration(
             ),
         ):
             assert await async_setup_component(hass, DOMAIN, {})
-        await hass.async_block_till_done()
+            await hass.async_block_till_done()
 
-    yield func
+    return func

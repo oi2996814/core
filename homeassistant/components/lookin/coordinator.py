@@ -1,20 +1,19 @@
 """Coordinator for lookin devices."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 import logging
 import time
-from typing import TypeVar
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-_LOGGER = logging.getLogger(__name__)
-_DataT = TypeVar("_DataT")
+from .const import NEVER_TIME, POLLING_FALLBACK_SECONDS
 
-NEVER_TIME = -120.0  # Time that will never match time.monotonic()
-ACTIVE_UPDATES_INTERVAL = 3  # Consider active for 3x the update interval
+_LOGGER = logging.getLogger(__name__)
 
 
 class LookinPushCoordinator:
@@ -32,9 +31,7 @@ class LookinPushCoordinator:
     def active(self, interval: timedelta) -> bool:
         """Check if the last push update was recently."""
         time_since_last_update = time.monotonic() - self.last_update
-        is_active = (
-            time_since_last_update < interval.total_seconds() * ACTIVE_UPDATES_INTERVAL
-        )
+        is_active = time_since_last_update < POLLING_FALLBACK_SECONDS
         _LOGGER.debug(
             "%s: push updates active: %s (time_since_last_update=%s)",
             self.name,
@@ -44,12 +41,15 @@ class LookinPushCoordinator:
         return is_active
 
 
-class LookinDataUpdateCoordinator(DataUpdateCoordinator[_DataT]):
+class LookinDataUpdateCoordinator[_DataT](DataUpdateCoordinator[_DataT]):
     """DataUpdateCoordinator to gather data for a specific lookin devices."""
+
+    config_entry: ConfigEntry
 
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         push_coordinator: LookinPushCoordinator,
         name: str,
         update_interval: timedelta | None = None,
@@ -60,9 +60,11 @@ class LookinDataUpdateCoordinator(DataUpdateCoordinator[_DataT]):
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=name,
             update_interval=update_interval,
             update_method=update_method,
+            always_update=False,
         )
 
     @callback

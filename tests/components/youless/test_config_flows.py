@@ -1,4 +1,5 @@
 """Test the youless config flow."""
+
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
@@ -25,9 +26,9 @@ async def test_full_flow(hass: HomeAssistant) -> None:
         DOMAIN, context={"source": SOURCE_USER}
     )
 
-    assert result.get("type") == FlowResultType.FORM
+    assert result.get("type") is FlowResultType.FORM
     assert result.get("errors") == {}
-    assert result.get("step_id") == SOURCE_USER
+    assert result.get("step_id") == "user"
 
     mock_youless = _get_mock_youless_api(
         initialize={"homes": [{"id": 1, "name": "myhome"}]}
@@ -41,7 +42,7 @@ async def test_full_flow(hass: HomeAssistant) -> None:
             {"host": "localhost"},
         )
 
-    assert result2.get("type") == FlowResultType.CREATE_ENTRY
+    assert result2.get("type") is FlowResultType.CREATE_ENTRY
     assert result2.get("title") == "localhost"
     assert len(mocked_youless.mock_calls) == 1
 
@@ -52,9 +53,9 @@ async def test_not_found(hass: HomeAssistant) -> None:
         DOMAIN, context={"source": SOURCE_USER}
     )
 
-    assert result.get("type") == FlowResultType.FORM
+    assert result.get("type") is FlowResultType.FORM
     assert result.get("errors") == {}
-    assert result.get("step_id") == SOURCE_USER
+    assert result.get("step_id") == "user"
 
     mock_youless = _get_mock_youless_api(initialize=URLError(""))
     with patch(
@@ -66,5 +67,5 @@ async def test_not_found(hass: HomeAssistant) -> None:
             {"host": "localhost"},
         )
 
-    assert result2.get("type") == FlowResultType.FORM
+    assert result2.get("type") is FlowResultType.FORM
     assert len(mocked_youless.mock_calls) == 1

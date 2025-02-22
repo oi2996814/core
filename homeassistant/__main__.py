@@ -1,12 +1,15 @@
 """Start Home Assistant."""
+
 from __future__ import annotations
 
 import argparse
+from contextlib import suppress
 import faulthandler
 import os
 import sys
 import threading
 
+from .backup_restore import restore_backup
 from .const import REQUIRED_PYTHON_VER, RESTART_EXIT_CODE, __version__
 
 FAULT_LOG_FILENAME = "home-assistant.log.fault"
@@ -35,7 +38,7 @@ def validate_python() -> None:
 
 def ensure_config_path(config_dir: str) -> None:
     """Validate the configuration directory."""
-    # pylint: disable=import-outside-toplevel
+    # pylint: disable-next=import-outside-toplevel
     from . import config as config_util
 
     lib_dir = os.path.join(config_dir, "deps")
@@ -77,7 +80,7 @@ def ensure_config_path(config_dir: str) -> None:
 
 def get_arguments() -> argparse.Namespace:
     """Get parsed passed in arguments."""
-    # pylint: disable=import-outside-toplevel
+    # pylint: disable-next=import-outside-toplevel
     from . import config as config_util
 
     parser = argparse.ArgumentParser(
@@ -93,7 +96,9 @@ def get_arguments() -> argparse.Namespace:
         help="Directory that contains the Home Assistant configuration",
     )
     parser.add_argument(
-        "--safe-mode", action="store_true", help="Start Home Assistant in safe mode"
+        "--recovery-mode",
+        action="store_true",
+        help="Start Home Assistant in recovery mode",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Start Home Assistant in debug mode"
@@ -143,19 +148,7 @@ def get_arguments() -> argparse.Namespace:
         help="Skips validation of operating system",
     )
 
-    arguments = parser.parse_args()
-
-    return arguments
-
-
-def cmdline() -> list[str]:
-    """Collect path and arguments to re-execute the current hass instance."""
-    if os.path.basename(sys.argv[0]) == "__main__.py":
-        modulepath = os.path.dirname(sys.argv[0])
-        os.environ["PYTHONPATH"] = os.path.dirname(modulepath)
-        return [sys.executable, "-m", "homeassistant"] + list(sys.argv[1:])
-
-    return sys.argv
+    return parser.parse_args()
 
 
 def check_threads() -> None:
@@ -184,16 +177,21 @@ def main() -> int:
         validate_os()
 
     if args.script is not None:
-        # pylint: disable=import-outside-toplevel
+        # pylint: disable-next=import-outside-toplevel
         from . import scripts
 
         return scripts.run(args.script)
 
     config_dir = os.path.abspath(os.path.join(os.getcwd(), args.config))
+    if restore_backup(config_dir):
+        return RESTART_EXIT_CODE
+
     ensure_config_path(config_dir)
 
-    # pylint: disable=import-outside-toplevel
-    from . import runner
+    # pylint: disable-next=import-outside-toplevel
+    from . import config, runner
+
+    safe_mode = config.safe_mode_enabled(config_dir)
 
     runtime_conf = runner.RuntimeConfig(
         config_dir=config_dir,
@@ -203,9 +201,10 @@ def main() -> int:
         log_no_color=args.log_no_color,
         skip_pip=args.skip_pip,
         skip_pip_packages=args.skip_pip_packages,
-        safe_mode=args.safe_mode,
+        recovery_mode=args.recovery_mode,
         debug=args.debug,
         open_ui=args.open_ui,
+        safe_mode=safe_mode,
     )
 
     fault_file_name = os.path.join(config_dir, FAULT_LOG_FILENAME)
@@ -214,8 +213,10 @@ def main() -> int:
         exit_code = runner.run(runtime_conf)
         faulthandler.disable()
 
-    if os.path.getsize(fault_file_name) == 0:
-        os.remove(fault_file_name)
+    # It's possible for the fault file to disappear, so suppress obvious errors
+    with suppress(FileNotFoundError):
+        if os.path.getsize(fault_file_name) == 0:
+            os.remove(fault_file_name)
 
     check_threads()
 

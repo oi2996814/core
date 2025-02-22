@@ -1,4 +1,5 @@
 """Constants for Google Mail integration."""
+
 from __future__ import annotations
 
 ATTR_BCC = "bcc"
@@ -16,6 +17,7 @@ ATTR_START = "start"
 ATTR_TITLE = "title"
 
 DATA_AUTH = "auth"
+DATA_HASS_CONFIG = "hass_config"
 DEFAULT_ACCESS = [
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.settings.basic",

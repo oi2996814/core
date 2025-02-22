@@ -1,4 +1,5 @@
 """Tests for the LaMetric notify platform."""
+
 from unittest.mock import MagicMock
 
 from demetriek import (
@@ -20,14 +21,13 @@ from homeassistant.components.notify import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from tests.common import MockConfigEntry
-
 NOTIFY_SERVICE = "frenck_s_lametric"
+
+pytestmark = pytest.mark.usefixtures("init_integration")
 
 
 async def test_notification_defaults(
     hass: HomeAssistant,
-    init_integration: MockConfigEntry,
     mock_lametric: MagicMock,
 ) -> None:
     """Test the LaMetric notification defaults."""
@@ -64,7 +64,6 @@ async def test_notification_defaults(
 
 async def test_notification_options(
     hass: HomeAssistant,
-    init_integration: MockConfigEntry,
     mock_lametric: MagicMock,
 ) -> None:
     """Test the LaMetric notification options."""
@@ -101,13 +100,12 @@ async def test_notification_options(
     assert len(notification.model.frames) == 1
     frame = notification.model.frames[0]
     assert type(frame) is Simple
-    assert frame.icon == 1234
+    assert frame.icon == "1234"
     assert frame.text == "The secret of getting ahead is getting started"
 
 
 async def test_notification_error(
     hass: HomeAssistant,
-    init_integration: MockConfigEntry,
     mock_lametric: MagicMock,
 ) -> None:
     """Test the LaMetric notification error."""

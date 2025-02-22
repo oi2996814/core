@@ -1,4 +1,5 @@
 """File for Azure Event Hub models."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -68,7 +69,7 @@ class AzureEventHubClientSAS(AzureEventHubClient):
                 f"{self.event_hub_namespace}.servicebus.windows.net"
             ),
             eventhub_name=self.event_hub_instance_name,
-            credential=EventHubSharedKeyCredential(  # type: ignore[arg-type]
+            credential=EventHubSharedKeyCredential(
                 policy=self.event_hub_sas_policy, key=self.event_hub_sas_key
             ),
             **ADDITIONAL_ARGS,

@@ -1,4 +1,5 @@
 """Utilities for ruuvi_gateway tests."""
+
 from __future__ import annotations
 
 import time
@@ -6,11 +7,7 @@ from unittest.mock import _patch, patch
 
 from aioruuvigateway.models import HistoryResponse
 
-from tests.components.ruuvi_gateway.consts import (
-    ASYNC_SETUP_ENTRY,
-    GATEWAY_MAC,
-    GET_GATEWAY_HISTORY_DATA,
-)
+from .consts import ASYNC_SETUP_ENTRY, GATEWAY_MAC, GET_GATEWAY_HISTORY_DATA
 
 
 def patch_gateway_ok() -> _patch:

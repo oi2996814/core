@@ -1,64 +1,62 @@
 """Home Connect entity base class."""
 
+from abc import abstractmethod
 import logging
 
-from homeassistant.core import callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import DeviceInfo, Entity
+from aiohomeconnect.model import EventKey
 
-from .api import HomeConnectDevice
-from .const import DOMAIN, SIGNAL_UPDATE_ENTITIES
+from homeassistant.core import callback
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityDescription
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .const import DOMAIN
+from .coordinator import HomeConnectApplianceData, HomeConnectCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class HomeConnectEntity(Entity):
+class HomeConnectEntity(CoordinatorEntity[HomeConnectCoordinator]):
     """Generic Home Connect entity (base class)."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
 
-    def __init__(self, device: HomeConnectDevice, desc: str) -> None:
+    def __init__(
+        self,
+        coordinator: HomeConnectCoordinator,
+        appliance: HomeConnectApplianceData,
+        desc: EntityDescription,
+    ) -> None:
         """Initialize the entity."""
-        self.device = device
-        self.desc = desc
-        self._name = f"{self.device.appliance.name} {desc}"
-
-    async def async_added_to_hass(self):
-        """Register callbacks."""
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, SIGNAL_UPDATE_ENTITIES, self._update_callback
-            )
+        super().__init__(coordinator, (appliance.info.ha_id, EventKey(desc.key)))
+        self.appliance = appliance
+        self.entity_description = desc
+        self._attr_unique_id = f"{appliance.info.ha_id}-{desc.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, appliance.info.ha_id)},
         )
+        self.update_native_value()
+
+    @abstractmethod
+    def update_native_value(self) -> None:
+        """Set the value of the entity."""
 
     @callback
-    def _update_callback(self, ha_id):
-        """Update data."""
-        if ha_id == self.device.appliance.haId:
-            self.async_entity_update()
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self.update_native_value()
+        self.async_write_ha_state()
+        _LOGGER.debug("Updated %s, new state: %s", self.entity_id, self.state)
 
     @property
-    def name(self):
-        """Return the name of the node (used for Entity_ID)."""
-        return self._name
+    def bsh_key(self) -> str:
+        """Return the BSH key."""
+        return self.entity_description.key
 
     @property
-    def unique_id(self):
-        """Return the unique id base on the id returned by Home Connect and the entity name."""
-        return f"{self.device.appliance.haId}-{self.desc}"
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return info about the device."""
-        return DeviceInfo(
-            identifiers={(DOMAIN, self.device.appliance.haId)},
-            manufacturer=self.device.appliance.brand,
-            model=self.device.appliance.vib,
-            name=self.device.appliance.name,
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.appliance.info.connected and self._attr_available and super().available
         )
-
-    @callback
-    def async_entity_update(self):
-        """Update the entity."""
-        _LOGGER.debug("Entity update triggered on %s", self)
-        self.async_schedule_update_ha_state(True)

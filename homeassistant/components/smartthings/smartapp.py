@@ -1,4 +1,7 @@
 """SmartApp functionality to receive cloud-push notifications."""
+
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -15,6 +18,7 @@ from pysmartthings import (
     CAPABILITIES,
     CLASSIFICATION_AUTOMATION,
     App,
+    AppEntity,
     AppOAuth,
     AppSettings,
     InstalledAppStatus,
@@ -25,6 +29,7 @@ from pysmartthings import (
 )
 
 from homeassistant.components import cloud, webhook
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -62,7 +67,7 @@ def format_unique_id(app_id: str, location_id: str) -> str:
     return f"{app_id}_{location_id}"
 
 
-async def find_app(hass: HomeAssistant, api):
+async def find_app(hass: HomeAssistant, api: SmartThings) -> AppEntity | None:
     """Find an existing SmartApp for this installation of hass."""
     apps = await api.apps()
     for app in [app for app in apps if app.app_name.startswith(APP_NAME_PREFIX)]:
@@ -73,11 +78,11 @@ async def find_app(hass: HomeAssistant, api):
             == hass.data[DOMAIN][CONF_INSTANCE_ID]
         ):
             return app
+    return None
 
 
 async def validate_installed_app(api, installed_app_id: str):
-    """
-    Ensure the specified installed SmartApp is valid and functioning.
+    """Ensure the specified installed SmartApp is valid and functioning.
 
     Query the API for the installed SmartApp and validate that it is tied to
     the specified app_id and is in an authorized state.
@@ -85,11 +90,9 @@ async def validate_installed_app(api, installed_app_id: str):
     installed_app = await api.installed_app(installed_app_id)
     if installed_app.installed_app_status != InstalledAppStatus.AUTHORIZED:
         raise RuntimeWarning(
-            "Installed SmartApp instance '{}' ({}) is not AUTHORIZED but instead {}".format(
-                installed_app.display_name,
-                installed_app.installed_app_id,
-                installed_app.installed_app_status,
-            )
+            f"Installed SmartApp instance '{installed_app.display_name}' "
+            f"({installed_app.installed_app_id}) is not AUTHORIZED "
+            f"but instead {installed_app.installed_app_status}"
         )
     return installed_app
 
@@ -104,8 +107,7 @@ def validate_webhook_requirements(hass: HomeAssistant) -> bool:
 
 
 def get_webhook_url(hass: HomeAssistant) -> str:
-    """
-    Get the URL of the webhook.
+    """Get the URL of the webhook.
 
     Return the cloudhook if available, otherwise local webhook.
     """
@@ -182,8 +184,7 @@ async def update_app(hass: HomeAssistant, app):
 
 
 def setup_smartapp(hass, app):
-    """
-    Configure an individual SmartApp in hass.
+    """Configure an individual SmartApp in hass.
 
     Register the SmartApp with the SmartAppManager so that hass will service
     lifecycle events (install, event, etc...).  A unique SmartApp is created
@@ -200,20 +201,24 @@ def setup_smartapp(hass, app):
     return smartapp
 
 
-async def setup_smartapp_endpoint(hass: HomeAssistant):
-    """
-    Configure the SmartApp webhook in hass.
+async def setup_smartapp_endpoint(hass: HomeAssistant, fresh_install: bool):
+    """Configure the SmartApp webhook in hass.
 
     SmartApps are an extension point within the SmartThings ecosystem and
     is used to receive push updates (i.e. device updates) from the cloud.
     """
     if hass.data.get(DOMAIN):
         # already setup
-        return
+        if not fresh_install:
+            return
+
+        # We're doing a fresh install, clean up
+        await unload_smartapp_endpoint(hass)
 
     # Get/create config to store a unique id for this hass instance.
     store = Store[dict[str, Any]](hass, STORAGE_VERSION, STORAGE_KEY)
-    if not (config := await store.async_load()):
+
+    if fresh_install or not (config := await store.async_load()):
         # Create config
         config = {
             CONF_INSTANCE_ID: str(uuid4()),
@@ -326,7 +331,7 @@ async def smartapp_sync_subscriptions(
             _LOGGER.debug(
                 "Created subscription for '%s' under app '%s'", target, installed_app_id
             )
-        except Exception as error:  # pylint:disable=broad-except
+        except Exception as error:  # noqa: BLE001
             _LOGGER.error(
                 "Failed to create subscription for '%s' under app '%s': %s",
                 target,
@@ -345,7 +350,7 @@ async def smartapp_sync_subscriptions(
                 sub.capability,
                 installed_app_id,
             )
-        except Exception as error:  # pylint:disable=broad-except
+        except Exception as error:  # noqa: BLE001
             _LOGGER.error(
                 "Failed to remove subscription for '%s' under app '%s': %s",
                 sub.capability,
@@ -398,7 +403,7 @@ async def smartapp_sync_subscriptions(
         _LOGGER.debug("Subscriptions for app '%s' are up-to-date", installed_app_id)
 
 
-async def _continue_flow(
+async def _find_and_continue_flow(
     hass: HomeAssistant,
     app_id: str,
     location_id: str,
@@ -416,24 +421,34 @@ async def _continue_flow(
         None,
     )
     if flow is not None:
-        await hass.config_entries.flow.async_configure(
-            flow["flow_id"],
-            {
-                CONF_INSTALLED_APP_ID: installed_app_id,
-                CONF_REFRESH_TOKEN: refresh_token,
-            },
-        )
-        _LOGGER.debug(
-            "Continued config flow '%s' for SmartApp '%s' under parent app '%s'",
-            flow["flow_id"],
-            installed_app_id,
-            app_id,
-        )
+        await _continue_flow(hass, app_id, installed_app_id, refresh_token, flow)
+
+
+async def _continue_flow(
+    hass: HomeAssistant,
+    app_id: str,
+    installed_app_id: str,
+    refresh_token: str,
+    flow: ConfigFlowResult,
+) -> None:
+    await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            CONF_INSTALLED_APP_ID: installed_app_id,
+            CONF_REFRESH_TOKEN: refresh_token,
+        },
+    )
+    _LOGGER.debug(
+        "Continued config flow '%s' for SmartApp '%s' under parent app '%s'",
+        flow["flow_id"],
+        installed_app_id,
+        app_id,
+    )
 
 
 async def smartapp_install(hass: HomeAssistant, req, resp, app):
     """Handle a SmartApp installation and continue the config flow."""
-    await _continue_flow(
+    await _find_and_continue_flow(
         hass, app.app_id, req.location_id, req.installed_app_id, req.refresh_token
     )
     _LOGGER.debug(
@@ -445,6 +460,27 @@ async def smartapp_install(hass: HomeAssistant, req, resp, app):
 
 async def smartapp_update(hass: HomeAssistant, req, resp, app):
     """Handle a SmartApp update and either update the entry or continue the flow."""
+    unique_id = format_unique_id(app.app_id, req.location_id)
+    flow = next(
+        (
+            flow
+            for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+            if flow["context"].get("unique_id") == unique_id
+            and flow["step_id"] == "authorize"
+        ),
+        None,
+    )
+    if flow is not None:
+        await _continue_flow(
+            hass, app.app_id, req.installed_app_id, req.refresh_token, flow
+        )
+        _LOGGER.debug(
+            "Continued reauth flow '%s' for SmartApp '%s' under parent app '%s'",
+            flow["flow_id"],
+            req.installed_app_id,
+            app.app_id,
+        )
+        return
     entry = next(
         (
             entry
@@ -464,7 +500,7 @@ async def smartapp_update(hass: HomeAssistant, req, resp, app):
             app.app_id,
         )
 
-    await _continue_flow(
+    await _find_and_continue_flow(
         hass, app.app_id, req.location_id, req.installed_app_id, req.refresh_token
     )
     _LOGGER.debug(
@@ -473,8 +509,7 @@ async def smartapp_update(hass: HomeAssistant, req, resp, app):
 
 
 async def smartapp_uninstall(hass: HomeAssistant, req, resp, app):
-    """
-    Handle when a SmartApp is removed from a location by the user.
+    """Handle when a SmartApp is removed from a location by the user.
 
     Find and delete the config entry representing the integration.
     """
@@ -499,8 +534,7 @@ async def smartapp_uninstall(hass: HomeAssistant, req, resp, app):
 
 
 async def smartapp_webhook(hass: HomeAssistant, webhook_id: str, request):
-    """
-    Handle a smartapp lifecycle event callback from SmartThings.
+    """Handle a smartapp lifecycle event callback from SmartThings.
 
     Requests from SmartThings are digitally signed and the SmartAppManager
     validates the signature for authenticity.

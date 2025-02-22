@@ -1,9 +1,10 @@
 """The HERE Travel Time integration."""
+
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import here_routing
 from here_routing import (
@@ -24,12 +25,13 @@ from here_transit import (
 )
 import voluptuous as vol
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant
-import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.location import find_coordinates
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import DistanceConverter
 
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, ROUTE_MODE_FASTEST
@@ -43,9 +45,12 @@ _LOGGER = logging.getLogger(__name__)
 class HERERoutingDataUpdateCoordinator(DataUpdateCoordinator[HERETravelTimeData]):
     """here_routing DataUpdateCoordinator."""
 
+    config_entry: ConfigEntry
+
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         api_key: str,
         config: HERETravelTimeConfig,
     ) -> None:
@@ -53,6 +58,7 @@ class HERERoutingDataUpdateCoordinator(DataUpdateCoordinator[HERETravelTimeData]
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
@@ -117,25 +123,43 @@ class HERERoutingDataUpdateCoordinator(DataUpdateCoordinator[HERETravelTimeData]
 
     def _parse_routing_response(self, response: dict[str, Any]) -> HERETravelTimeData:
         """Parse the routing response dict to a HERETravelTimeData."""
-        section: dict[str, Any] = response["routes"][0]["sections"][0]
-        summary: dict[str, int] = section["summary"]
-        mapped_origin_lat: float = section["departure"]["place"]["location"]["lat"]
-        mapped_origin_lon: float = section["departure"]["place"]["location"]["lng"]
-        mapped_destination_lat: float = section["arrival"]["place"]["location"]["lat"]
-        mapped_destination_lon: float = section["arrival"]["place"]["location"]["lng"]
-        distance: float = DistanceConverter.convert(
-            summary["length"], UnitOfLength.METERS, UnitOfLength.KILOMETERS
-        )
+        distance: float = 0.0
+        duration: float = 0.0
+        duration_in_traffic: float = 0.0
+
+        for section in response["routes"][0]["sections"]:
+            distance += DistanceConverter.convert(
+                section["summary"]["length"],
+                UnitOfLength.METERS,
+                UnitOfLength.KILOMETERS,
+            )
+            duration += section["summary"]["baseDuration"]
+            duration_in_traffic += section["summary"]["duration"]
+
+        first_section = response["routes"][0]["sections"][0]
+        last_section = response["routes"][0]["sections"][-1]
+        mapped_origin_lat: float = first_section["departure"]["place"]["location"][
+            "lat"
+        ]
+        mapped_origin_lon: float = first_section["departure"]["place"]["location"][
+            "lng"
+        ]
+        mapped_destination_lat: float = last_section["arrival"]["place"]["location"][
+            "lat"
+        ]
+        mapped_destination_lon: float = last_section["arrival"]["place"]["location"][
+            "lng"
+        ]
         origin_name: str | None = None
-        if (names := section["spans"][0].get("names")) is not None:
+        if (names := first_section["spans"][0].get("names")) is not None:
             origin_name = names[0]["value"]
         destination_name: str | None = None
-        if (names := section["spans"][-1].get("names")) is not None:
+        if (names := last_section["spans"][-1].get("names")) is not None:
             destination_name = names[0]["value"]
         return HERETravelTimeData(
             attribution=None,
-            duration=round(summary["baseDuration"] / 60),
-            duration_in_traffic=round(summary["duration"] / 60),
+            duration=round(duration / 60),
+            duration_in_traffic=round(duration_in_traffic / 60),
             distance=distance,
             origin=f"{mapped_origin_lat},{mapped_origin_lon}",
             destination=f"{mapped_destination_lat},{mapped_destination_lon}",
@@ -145,13 +169,16 @@ class HERERoutingDataUpdateCoordinator(DataUpdateCoordinator[HERETravelTimeData]
 
 
 class HERETransitDataUpdateCoordinator(
-    DataUpdateCoordinator[Optional[HERETravelTimeData]]
+    DataUpdateCoordinator[HERETravelTimeData | None]
 ):
     """HERETravelTime DataUpdateCoordinator."""
+
+    config_entry: ConfigEntry
 
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         api_key: str,
         config: HERETravelTimeConfig,
     ) -> None:
@@ -159,6 +186,7 @@ class HERETransitDataUpdateCoordinator(
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
@@ -318,7 +346,7 @@ def build_hass_attribution(sections: list[dict[str, Any]]) -> str | None:
 
 def next_datetime(simple_time: time) -> datetime:
     """Take a time like 08:00:00 and combine it with the current date."""
-    combined = datetime.combine(dt.start_of_local_day(), simple_time)
+    combined = datetime.combine(dt_util.start_of_local_day(), simple_time)
     if combined < datetime.now():
         combined = combined + timedelta(days=1)
     return combined

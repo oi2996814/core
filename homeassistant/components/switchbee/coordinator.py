@@ -10,6 +10,7 @@ from switchbee.api import CentralUnitPolling, CentralUnitWsRPC
 from switchbee.api.central_unit import SwitchBeeError
 from switchbee.device import DeviceType, SwitchBeeBaseDevice
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import format_mac
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -22,21 +23,27 @@ _LOGGER = logging.getLogger(__name__)
 class SwitchBeeCoordinator(DataUpdateCoordinator[Mapping[int, SwitchBeeBaseDevice]]):
     """Class to manage fetching SwitchBee data API."""
 
+    config_entry: ConfigEntry
+
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         swb_api: CentralUnitPolling | CentralUnitWsRPC,
     ) -> None:
         """Initialize."""
         self.api: CentralUnitPolling | CentralUnitWsRPC = swb_api
         self._reconnect_counts: int = 0
-        self.mac_formatted: str | None = (
-            None if self.api.mac is None else format_mac(self.api.mac)
+        assert self.api.mac is not None
+        self.unique_id = (
+            self.api.unique_id
+            if self.api.unique_id is not None
+            else format_mac(self.api.mac)
         )
-
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=SCAN_INTERVAL_SEC[type(self.api)]),
         )
@@ -77,14 +84,15 @@ class SwitchBeeCoordinator(DataUpdateCoordinator[Mapping[int, SwitchBeeBaseDevic
                         DeviceType.Shutter,
                         DeviceType.Somfy,
                         DeviceType.Thermostat,
+                        DeviceType.VRFAC,
                     ]
                 )
             except SwitchBeeError as exp:
                 raise UpdateFailed(
                     f"Error communicating with API: {exp}"
                 ) from SwitchBeeError
-            else:
-                _LOGGER.debug("Loaded devices")
+
+            _LOGGER.debug("Loaded devices")
 
         # Get the state of the devices
         try:

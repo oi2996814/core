@@ -1,4 +1,5 @@
 """The Coordinator for EnergyZero."""
+
 from __future__ import annotations
 
 from datetime import timedelta
@@ -13,11 +14,14 @@ from energyzero import (
 )
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, LOGGER, SCAN_INTERVAL, THRESHOLD_HOUR
+
+type EnergyZeroConfigEntry = ConfigEntry[EnergyZeroDataUpdateCoordinator]
 
 
 class EnergyZeroData(NamedTuple):
@@ -33,20 +37,21 @@ class EnergyZeroDataUpdateCoordinator(DataUpdateCoordinator[EnergyZeroData]):
 
     config_entry: ConfigEntry
 
-    def __init__(self, hass) -> None:
+    def __init__(self, hass: HomeAssistant, entry: EnergyZeroConfigEntry) -> None:
         """Initialize global EnergyZero data updater."""
         super().__init__(
             hass,
             LOGGER,
             name=DOMAIN,
             update_interval=SCAN_INTERVAL,
+            config_entry=entry,
         )
 
         self.energyzero = EnergyZero(session=async_get_clientsession(hass))
 
     async def _async_update_data(self) -> EnergyZeroData:
         """Fetch data from EnergyZero."""
-        today = dt.now().date()
+        today = dt_util.now().date()
         gas_today = None
         energy_tomorrow = None
 
@@ -61,7 +66,7 @@ class EnergyZeroDataUpdateCoordinator(DataUpdateCoordinator[EnergyZeroData]):
             except EnergyZeroNoDataError:
                 LOGGER.debug("No data for gas prices for EnergyZero integration")
             # Energy for tomorrow only after 14:00 UTC
-            if dt.utcnow().hour >= THRESHOLD_HOUR:
+            if dt_util.utcnow().hour >= THRESHOLD_HOUR:
                 tomorrow = today + timedelta(days=1)
                 try:
                     energy_tomorrow = await self.energyzero.energy_prices(

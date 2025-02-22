@@ -1,4 +1,5 @@
 """Support for ISY covers."""
+
 from __future__ import annotations
 
 from typing import Any, cast
@@ -13,25 +14,31 @@ from homeassistant.components.cover import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import _LOGGER, DOMAIN, UOM_8_BIT_RANGE, UOM_BARRIER
+from .const import _LOGGER, DOMAIN, UOM_8_BIT_RANGE
 from .entity import ISYNodeEntity, ISYProgramEntity
+from .models import IsyData
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the ISY cover platform."""
-    isy_data = hass.data[DOMAIN][entry.entry_id]
-    entities: list[ISYCoverEntity | ISYCoverProgramEntity] = []
+    isy_data: IsyData = hass.data[DOMAIN][entry.entry_id]
     devices: dict[str, DeviceInfo] = isy_data.devices
-    for node in isy_data.nodes[Platform.COVER]:
-        entities.append(ISYCoverEntity(node, devices.get(node.primary_node)))
+    entities: list[ISYCoverEntity | ISYCoverProgramEntity] = [
+        ISYCoverEntity(node, devices.get(node.primary_node))
+        for node in isy_data.nodes[Platform.COVER]
+    ]
 
-    for name, status, actions in isy_data.programs[Platform.COVER]:
-        entities.append(ISYCoverProgramEntity(name, status, actions))
+    entities.extend(
+        ISYCoverProgramEntity(name, status, actions)
+        for name, status, actions in isy_data.programs[Platform.COVER]
+    )
 
     async_add_entities(entities)
 
@@ -63,8 +70,7 @@ class ISYCoverEntity(ISYNodeEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Send the open cover command to the ISY cover device."""
-        val = 100 if self._node.uom == UOM_BARRIER else None
-        if not await self._node.turn_on(val=val):
+        if not await self._node.turn_on():
             _LOGGER.error("Unable to open the cover")
 
     async def async_close_cover(self, **kwargs: Any) -> None:

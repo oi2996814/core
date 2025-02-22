@@ -1,4 +1,5 @@
 """Data for the D-Link Power Plug integration."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -19,9 +20,9 @@ class SmartPlugData:
         """Initialize the data object."""
         self.smartplug = smartplug
         self.state: str | None = None
-        self.temperature: str | None = None
-        self.current_consumption = None
-        self.total_consumption: str | None = None
+        self.temperature: str = ""
+        self.current_consumption: str = ""
+        self.total_consumption: str = ""
         self.available = False
         self._n_tried = 0
         self._last_tried: datetime | None = None

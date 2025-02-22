@@ -1,4 +1,5 @@
 """Representation of ISYEntity Types."""
+
 from __future__ import annotations
 
 from typing import Any, cast
@@ -23,7 +24,8 @@ from pyisy.variables import Variable
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity import DeviceInfo, Entity, EntityDescription
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import Entity, EntityDescription
 
 from .const import DOMAIN
 
@@ -94,7 +96,7 @@ class ISYNodeEntity(ISYEntity):
     ) -> None:
         """Initialize the ISY/IoX node entity."""
         super().__init__(node, device_info=device_info)
-        if node.address == node.primary_node:
+        if hasattr(node, "parent_node") and node.parent_node is None:
             self._attr_has_entity_name = True
             self._attr_name = None
 
@@ -104,26 +106,26 @@ class ISYNodeEntity(ISYEntity):
         return getattr(self._node, TAG_ENABLED, True)
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Get the state attributes for the device.
 
         The 'aux_properties' in the pyisy Node class are combined with the
         other attributes which have been picked up from the event stream and
         the combined result are returned as the device state attributes.
         """
-        attr = {}
+        attrs = self._attrs
         node = self._node
         # Insteon aux_properties are now their own sensors
-        if hasattr(self._node, "aux_properties") and node.protocol != PROTO_INSTEON:
+        # so we no longer need to add them to the attributes
+        if node.protocol != PROTO_INSTEON and hasattr(node, "aux_properties"):
             for name, value in self._node.aux_properties.items():
                 attr_name = COMMAND_FRIENDLY_NAME.get(name, name)
-                attr[attr_name] = str(value.formatted).lower()
+                attrs[attr_name] = str(value.formatted).lower()
 
         # If a Group/Scene, set a property if the entire scene is on/off
-        if hasattr(self._node, "group_all_on"):
-            attr["group_all_on"] = STATE_ON if self._node.group_all_on else STATE_OFF
+        if hasattr(node, "group_all_on"):
+            attrs["group_all_on"] = STATE_ON if node.group_all_on else STATE_OFF
 
-        self._attrs.update(attr)
         return self._attrs
 
     async def async_send_node_command(self, command: str) -> None:
@@ -187,7 +189,7 @@ class ISYProgramEntity(ISYEntity):
         self._actions = actions
 
     @property
-    def extra_state_attributes(self) -> dict:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Get the state attributes for the device."""
         attr = {}
         if self._actions:

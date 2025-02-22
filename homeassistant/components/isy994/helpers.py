@@ -1,9 +1,12 @@
 """Sorting helpers for ISY device classifications."""
+
 from __future__ import annotations
 
 from typing import cast
 
 from pyisy.constants import (
+    BACKLIGHT_SUPPORT,
+    CMD_BACKLIGHT,
     ISY_VALUE_UNKNOWN,
     PROP_BUSY,
     PROP_COMMS_ERROR,
@@ -14,14 +17,15 @@ from pyisy.constants import (
     PROTO_INSTEON,
     PROTO_PROGRAM,
     PROTO_ZWAVE,
+    TAG_ENABLED,
     TAG_FOLDER,
+    UOM_INDEX,
 )
 from pyisy.nodes import Group, Node, Nodes
 from pyisy.programs import Programs
-from pyisy.variables import Variables
 
 from homeassistant.const import ATTR_MANUFACTURER, ATTR_MODEL, Platform
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
     _LOGGER,
@@ -105,7 +109,6 @@ def _check_for_insteon_type(
             device_type.startswith(t)
             for t in set(NODE_FILTERS[platform][FILTER_INSTEON_TYPE])
         ):
-
             # Hacky special-cases for certain devices with different platforms
             # included as subnodes. Note that special-cases are not necessary
             # on ISY 5.x firmware as it uses the superior NodeDefs method
@@ -277,6 +280,16 @@ def _is_sensor_a_binary_sensor(isy_data: IsyData, node: Group | Node) -> bool:
     return False
 
 
+def _add_backlight_if_supported(isy_data: IsyData, node: Node) -> None:
+    """Check if a node supports setting a backlight and add entity."""
+    if not getattr(node, "is_backlight_supported", False):
+        return
+    if BACKLIGHT_SUPPORT[node.node_def_id] == UOM_INDEX:
+        isy_data.aux_properties[Platform.SELECT].append((node, CMD_BACKLIGHT))
+        return
+    isy_data.aux_properties[Platform.NUMBER].append((node, CMD_BACKLIGHT))
+
+
 def _generate_device_info(node: Node) -> DeviceInfo:
     """Generate the device info for a root node device."""
     isy = node.isy
@@ -299,10 +312,14 @@ def _generate_device_info(node: Node) -> DeviceInfo:
         model += f" ({node.type})"
 
     # Get extra information for Z-Wave Devices
-    if node.protocol == PROTO_ZWAVE and node.zwave_props.mfr_id != "0":
-        device_info[
-            ATTR_MANUFACTURER
-        ] = f"Z-Wave MfrID:{int(node.zwave_props.mfr_id):#0{6}x}"
+    if (
+        node.protocol == PROTO_ZWAVE
+        and node.zwave_props
+        and node.zwave_props.mfr_id != "0"
+    ):
+        device_info[ATTR_MANUFACTURER] = (
+            f"Z-Wave MfrID:{int(node.zwave_props.mfr_id):#0{6}x}"
+        )
         model += (
             f"Type:{int(node.zwave_props.prod_type_id):#0{6}x} "
             f"Product:{int(node.zwave_props.product_id):#0{6}x}"
@@ -332,10 +349,11 @@ def _categorize_nodes(
             if getattr(node, "is_dimmable", False):
                 aux_controls = ROOT_AUX_CONTROLS.intersection(node.aux_properties)
                 for control in aux_controls:
-                    # Deprecated all aux properties as sensors. Update in 2023.5.0 to remove extras.
-                    isy_data.aux_properties[Platform.SENSOR].append((node, control))
                     platform = NODE_AUX_FILTERS[control]
                     isy_data.aux_properties[platform].append((node, control))
+            if hasattr(node, TAG_ENABLED):
+                isy_data.aux_properties[Platform.SWITCH].append((node, TAG_ENABLED))
+            _add_backlight_if_supported(isy_data, node)
 
         if node.protocol == PROTO_GROUP:
             isy_data.nodes[ISY_GROUP_PLATFORM].append(node)
@@ -412,22 +430,8 @@ def _categorize_programs(isy_data: IsyData, programs: Programs) -> None:
             isy_data.programs[platform].append(entity)
 
 
-def _categorize_variables(
-    isy_data: IsyData, variables: Variables, identifier: str
-) -> None:
-    """Gather the ISY Variables to be added as sensors."""
-    try:
-        isy_data.variables[Platform.SENSOR] = [
-            variables[vtype][vid]
-            for (vtype, vname, vid) in variables.children
-            if identifier in vname
-        ]
-    except KeyError as err:
-        _LOGGER.error("Error adding ISY Variables: %s", err)
-
-
 def convert_isy_value_to_hass(
-    value: int | float | None,
+    value: float | None,
     uom: str | None,
     precision: int | str,
     fallback_precision: int | None = None,

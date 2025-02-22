@@ -1,4 +1,5 @@
 """Support for binary sensors through the SmartThings cloud API."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -10,12 +11,12 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import SmartThingsEntity
 from .const import DATA_BROKERS, DOMAIN
+from .entity import SmartThingsEntity
 
 CAPABILITY_TO_ATTRIB = {
     Capability.acceleration_sensor: Attribute.acceleration,
@@ -47,7 +48,7 @@ ATTRIB_TO_ENTTIY_CATEGORY = {
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Add binary sensors for a config entry."""
     broker = hass.data[DOMAIN][DATA_BROKERS][config_entry.entry_id]
@@ -73,28 +74,12 @@ class SmartThingsBinarySensor(SmartThingsEntity, BinarySensorEntity):
         """Init the class."""
         super().__init__(device)
         self._attribute = attribute
-
-    @property
-    def name(self) -> str:
-        """Return the name of the binary sensor."""
-        return f"{self._device.label} {self._attribute}"
-
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID."""
-        return f"{self._device.device_id}.{self._attribute}"
+        self._attr_name = f"{device.label} {attribute}"
+        self._attr_unique_id = f"{device.device_id}.{attribute}"
+        self._attr_device_class = ATTRIB_TO_CLASS[attribute]
+        self._attr_entity_category = ATTRIB_TO_ENTTIY_CATEGORY.get(attribute)
 
     @property
     def is_on(self):
         """Return true if the binary sensor is on."""
         return self._device.status.is_on(self._attribute)
-
-    @property
-    def device_class(self):
-        """Return the class of this device."""
-        return ATTRIB_TO_CLASS[self._attribute]
-
-    @property
-    def entity_category(self):
-        """Return the entity category of this device."""
-        return ATTRIB_TO_ENTTIY_CATEGORY.get(self._attribute)

@@ -1,18 +1,20 @@
 """Support to interact with Remember The Milk."""
+
 import json
 import logging
-import os
+from pathlib import Path
 
-from rtmapi import Rtm, RtmRequestFailedException
+from rtmapi import Rtm
 import voluptuous as vol
 
 from homeassistant.components import configurator
-from homeassistant.const import CONF_API_KEY, CONF_ID, CONF_NAME, CONF_TOKEN, STATE_OK
-from homeassistant.core import HomeAssistant, ServiceCall
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
+from homeassistant.const import CONF_API_KEY, CONF_ID, CONF_NAME, CONF_TOKEN
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.typing import ConfigType
+
+from .entity import RememberTheMilkEntity
 
 # httplib2 is a transitive dependency from RtmAPI. If this dependency is not
 # set explicitly, the library does not work.
@@ -52,12 +54,12 @@ SERVICE_SCHEMA_COMPLETE_TASK = vol.Schema({vol.Required(CONF_ID): cv.string})
 
 def setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Remember the milk component."""
-    component = EntityComponent[RememberTheMilk](_LOGGER, DOMAIN, hass)
+    component = EntityComponent[RememberTheMilkEntity](_LOGGER, DOMAIN, hass)
 
     stored_rtm_config = RememberTheMilkConfiguration(hass)
     for rtm_config in config[DOMAIN]:
         account_name = rtm_config[CONF_NAME]
-        _LOGGER.info("Adding Remember the milk account %s", account_name)
+        _LOGGER.debug("Adding Remember the milk account %s", account_name)
         api_key = rtm_config[CONF_API_KEY]
         shared_secret = rtm_config[CONF_SHARED_SECRET]
         token = stored_rtm_config.get_token(account_name)
@@ -84,7 +86,7 @@ def setup(hass: HomeAssistant, config: ConfigType) -> bool:
 def _create_instance(
     hass, account_name, api_key, shared_secret, token, stored_rtm_config, component
 ):
-    entity = RememberTheMilk(
+    entity = RememberTheMilkEntity(
         account_name, api_key, shared_secret, token, stored_rtm_config
     )
     component.add_entities([entity])
@@ -110,7 +112,7 @@ def _register_new_account(
     url, frob = api.authenticate_desktop()
     _LOGGER.debug("Sent authentication request to server")
 
-    def register_account_callback(_):
+    def register_account_callback(fields: list[dict[str, str]]) -> None:
         """Call for register the configurator."""
         api.retrieve_token(frob)
         token = api.token
@@ -136,7 +138,7 @@ def _register_new_account(
 
         configurator.request_done(hass, request_id)
 
-    request_id = configurator.async_request_config(
+    request_id = configurator.request_config(
         hass,
         f"{DOMAIN} - {account_name}",
         callback=register_account_callback,
@@ -158,56 +160,64 @@ class RememberTheMilkConfiguration:
     This class stores the authentication token it get from the backend.
     """
 
-    def __init__(self, hass):
+    def __init__(self, hass: HomeAssistant) -> None:
         """Create new instance of configuration."""
         self._config_file_path = hass.config.path(CONFIG_FILE_NAME)
-        if not os.path.isfile(self._config_file_path):
-            self._config = {}
-            return
+        self._config = {}
+        _LOGGER.debug("Loading configuration from file: %s", self._config_file_path)
         try:
-            _LOGGER.debug("Loading configuration from file: %s", self._config_file_path)
-            with open(self._config_file_path, encoding="utf8") as config_file:
-                self._config = json.load(config_file)
-        except ValueError:
-            _LOGGER.error(
-                "Failed to load configuration file, creating a new one: %s",
+            self._config = json.loads(
+                Path(self._config_file_path).read_text(encoding="utf8")
+            )
+        except FileNotFoundError:
+            _LOGGER.debug("Missing configuration file: %s", self._config_file_path)
+        except OSError:
+            _LOGGER.debug(
+                "Failed to read from configuration file, %s, using empty configuration",
                 self._config_file_path,
             )
-            self._config = {}
+        except ValueError:
+            _LOGGER.error(
+                "Failed to parse configuration file, %s, using empty configuration",
+                self._config_file_path,
+            )
 
-    def save_config(self):
+    def _save_config(self) -> None:
         """Write the configuration to a file."""
-        with open(self._config_file_path, "w", encoding="utf8") as config_file:
-            json.dump(self._config, config_file)
+        Path(self._config_file_path).write_text(
+            json.dumps(self._config), encoding="utf8"
+        )
 
-    def get_token(self, profile_name):
+    def get_token(self, profile_name: str) -> str | None:
         """Get the server token for a profile."""
         if profile_name in self._config:
             return self._config[profile_name][CONF_TOKEN]
         return None
 
-    def set_token(self, profile_name, token):
+    def set_token(self, profile_name: str, token: str) -> None:
         """Store a new server token for a profile."""
         self._initialize_profile(profile_name)
         self._config[profile_name][CONF_TOKEN] = token
-        self.save_config()
+        self._save_config()
 
-    def delete_token(self, profile_name):
+    def delete_token(self, profile_name: str) -> None:
         """Delete a token for a profile.
 
         Usually called when the token has expired.
         """
         self._config.pop(profile_name, None)
-        self.save_config()
+        self._save_config()
 
-    def _initialize_profile(self, profile_name):
+    def _initialize_profile(self, profile_name: str) -> None:
         """Initialize the data structures for a profile."""
         if profile_name not in self._config:
             self._config[profile_name] = {}
         if CONF_ID_MAP not in self._config[profile_name]:
             self._config[profile_name][CONF_ID_MAP] = {}
 
-    def get_rtm_id(self, profile_name, hass_id):
+    def get_rtm_id(
+        self, profile_name: str, hass_id: str
+    ) -> tuple[str, str, str] | None:
         """Get the RTM ids for a Home Assistant task ID.
 
         The id of a RTM tasks consists of the tuple:
@@ -219,7 +229,14 @@ class RememberTheMilkConfiguration:
             return None
         return ids[CONF_LIST_ID], ids[CONF_TIMESERIES_ID], ids[CONF_TASK_ID]
 
-    def set_rtm_id(self, profile_name, hass_id, list_id, time_series_id, rtm_task_id):
+    def set_rtm_id(
+        self,
+        profile_name: str,
+        hass_id: str,
+        list_id: str,
+        time_series_id: str,
+        rtm_task_id: str,
+    ) -> None:
         """Add/Update the RTM task ID for a Home Assistant task IS."""
         self._initialize_profile(profile_name)
         id_tuple = {
@@ -228,142 +245,11 @@ class RememberTheMilkConfiguration:
             CONF_TASK_ID: rtm_task_id,
         }
         self._config[profile_name][CONF_ID_MAP][hass_id] = id_tuple
-        self.save_config()
+        self._save_config()
 
-    def delete_rtm_id(self, profile_name, hass_id):
+    def delete_rtm_id(self, profile_name: str, hass_id: str) -> None:
         """Delete a key mapping."""
         self._initialize_profile(profile_name)
         if hass_id in self._config[profile_name][CONF_ID_MAP]:
             del self._config[profile_name][CONF_ID_MAP][hass_id]
-            self.save_config()
-
-
-class RememberTheMilk(Entity):
-    """Representation of an interface to Remember The Milk."""
-
-    def __init__(self, name, api_key, shared_secret, token, rtm_config):
-        """Create new instance of Remember The Milk component."""
-        self._name = name
-        self._api_key = api_key
-        self._shared_secret = shared_secret
-        self._token = token
-        self._rtm_config = rtm_config
-        self._rtm_api = Rtm(api_key, shared_secret, "delete", token)
-        self._token_valid = None
-        self._check_token()
-        _LOGGER.debug("Instance created for account %s", self._name)
-
-    def _check_token(self):
-        """Check if the API token is still valid.
-
-        If it is not valid any more, delete it from the configuration. This
-        will trigger a new authentication process.
-        """
-        valid = self._rtm_api.token_valid()
-        if not valid:
-            _LOGGER.error(
-                "Token for account %s is invalid. You need to register again!",
-                self.name,
-            )
-            self._rtm_config.delete_token(self._name)
-            self._token_valid = False
-        else:
-            self._token_valid = True
-        return self._token_valid
-
-    def create_task(self, call: ServiceCall) -> None:
-        """Create a new task on Remember The Milk.
-
-        You can use the smart syntax to define the attributes of a new task,
-        e.g. "my task #some_tag ^today" will add tag "some_tag" and set the
-        due date to today.
-        """
-        try:
-            task_name = call.data[CONF_NAME]
-            hass_id = call.data.get(CONF_ID)
-            rtm_id = None
-            if hass_id is not None:
-                rtm_id = self._rtm_config.get_rtm_id(self._name, hass_id)
-            result = self._rtm_api.rtm.timelines.create()
-            timeline = result.timeline.value
-
-            if hass_id is None or rtm_id is None:
-                result = self._rtm_api.rtm.tasks.add(
-                    timeline=timeline, name=task_name, parse="1"
-                )
-                _LOGGER.debug(
-                    "Created new task '%s' in account %s", task_name, self.name
-                )
-                self._rtm_config.set_rtm_id(
-                    self._name,
-                    hass_id,
-                    result.list.id,
-                    result.list.taskseries.id,
-                    result.list.taskseries.task.id,
-                )
-            else:
-                self._rtm_api.rtm.tasks.setName(
-                    name=task_name,
-                    list_id=rtm_id[0],
-                    taskseries_id=rtm_id[1],
-                    task_id=rtm_id[2],
-                    timeline=timeline,
-                )
-                _LOGGER.debug(
-                    "Updated task with id '%s' in account %s to name %s",
-                    hass_id,
-                    self.name,
-                    task_name,
-                )
-        except RtmRequestFailedException as rtm_exception:
-            _LOGGER.error(
-                "Error creating new Remember The Milk task for account %s: %s",
-                self._name,
-                rtm_exception,
-            )
-
-    def complete_task(self, call: ServiceCall) -> None:
-        """Complete a task that was previously created by this component."""
-        hass_id = call.data[CONF_ID]
-        rtm_id = self._rtm_config.get_rtm_id(self._name, hass_id)
-        if rtm_id is None:
-            _LOGGER.error(
-                (
-                    "Could not find task with ID %s in account %s. "
-                    "So task could not be closed"
-                ),
-                hass_id,
-                self._name,
-            )
-            return
-        try:
-            result = self._rtm_api.rtm.timelines.create()
-            timeline = result.timeline.value
-            self._rtm_api.rtm.tasks.complete(
-                list_id=rtm_id[0],
-                taskseries_id=rtm_id[1],
-                task_id=rtm_id[2],
-                timeline=timeline,
-            )
-            self._rtm_config.delete_rtm_id(self._name, hass_id)
-            _LOGGER.debug(
-                "Completed task with id %s in account %s", hass_id, self._name
-            )
-        except RtmRequestFailedException as rtm_exception:
-            _LOGGER.error(
-                "Error creating new Remember The Milk task for account %s: %s",
-                self._name,
-                rtm_exception,
-            )
-
-    @property
-    def name(self):
-        """Return the name of the device."""
-        return self._name
-
-    @property
-    def state(self):
-        """Return the state of the device."""
-        if not self._token_valid:
-            return "API token invalid"
-        return STATE_OK
+            self._save_config()

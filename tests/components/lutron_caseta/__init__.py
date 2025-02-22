@@ -1,6 +1,5 @@
 """Tests for the Lutron Caseta integration."""
 
-
 from unittest.mock import patch
 
 from homeassistant.components.lutron_caseta import DOMAIN
@@ -10,6 +9,7 @@ from homeassistant.components.lutron_caseta.const import (
     CONF_KEYFILE,
 )
 from homeassistant.const import CONF_HOST
+from homeassistant.core import HomeAssistant
 
 from tests.common import MockConfigEntry
 
@@ -84,7 +84,7 @@ _LEAP_DEVICE_TYPES = {
 }
 
 
-async def async_setup_integration(hass, mock_bridge) -> MockConfigEntry:
+async def async_setup_integration(hass: HomeAssistant, mock_bridge) -> MockConfigEntry:
     """Set up a mock bridge."""
     mock_entry = MockConfigEntry(domain=DOMAIN, data=ENTRY_MOCK_DATA)
     mock_entry.add_to_hass(hass)
@@ -101,7 +101,7 @@ async def async_setup_integration(hass, mock_bridge) -> MockConfigEntry:
 class MockBridge:
     """Mock Lutron bridge that emulates configured connected status."""
 
-    def __init__(self, can_connect=True):
+    def __init__(self, can_connect=True) -> None:
         """Initialize MockBridge instance with configured mock connectivity."""
         self.can_connect = can_connect
         self.is_currently_connected = False
@@ -279,13 +279,12 @@ class MockBridge:
         return self.devices
 
     def get_devices_by_domain(self, domain: str) -> list[dict]:
-        """
-        Return a list of devices for the given domain.
+        """Return a list of devices for the given domain.
 
         :param domain: one of 'light', 'switch', 'cover', 'fan' or 'sensor'
         :returns list of zero or more of the devices
         """
-        types = _LEAP_DEVICE_TYPES.get(domain, None)
+        types = _LEAP_DEVICE_TYPES.get(domain)
 
         # return immediately if not a supported domain
         if types is None:
@@ -294,16 +293,14 @@ class MockBridge:
         return self.get_devices_by_types(types)
 
     def get_devices_by_type(self, type_: str) -> list[dict]:
-        """
-        Will return all devices of a given device type.
+        """Will return all devices of a given device type.
 
         :param type_: LEAP device type, e.g. WallSwitch
         """
         return [device for device in self.devices.values() if device["type"] == type_]
 
     def get_devices_by_types(self, types: list[str]) -> list[dict]:
-        """
-        Will return all devices for a list of given device types.
+        """Will return all devices for a list of given device types.
 
         :param types: list of LEAP device types such as WallSwitch, WallDimmer
         """

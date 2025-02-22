@@ -1,4 +1,5 @@
 """The sensor websocket API."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -29,7 +30,10 @@ def ws_device_class_units(
 ) -> None:
     """Return supported units for a device class."""
     device_class = msg["device_class"]
-    convertible_units = set()
+    convertible_units = []
     if device_class in UNIT_CONVERTERS and device_class in DEVICE_CLASS_UNITS:
-        convertible_units = DEVICE_CLASS_UNITS[device_class]
+        convertible_units = sorted(
+            DEVICE_CLASS_UNITS[device_class],
+            key=lambda s: str.casefold(str(s)),
+        )
     connection.send_result(msg["id"], {"units": convertible_units})

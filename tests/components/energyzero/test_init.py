@@ -1,17 +1,19 @@
 """Tests for the EnergyZero integration."""
+
 from unittest.mock import MagicMock, patch
 
 from energyzero import EnergyZeroConnectionError
+import pytest
 
-from homeassistant.components.energyzero.const import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
 from tests.common import MockConfigEntry
 
 
+@pytest.mark.usefixtures("mock_energyzero")
 async def test_load_unload_config_entry(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_energyzero: MagicMock
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
 ) -> None:
     """Test the EnergyZero configuration entry loading/unloading."""
     mock_config_entry.add_to_hass(hass)
@@ -23,7 +25,6 @@ async def test_load_unload_config_entry(
     await hass.config_entries.async_unload(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert not hass.data.get(DOMAIN)
     assert mock_config_entry.state is ConfigEntryState.NOT_LOADED
 
 

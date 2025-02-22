@@ -1,4 +1,5 @@
 """Platform for climate integration."""
+
 from __future__ import annotations
 
 import logging
@@ -22,14 +23,14 @@ from homeassistant.components.climate import (
     ClimateEntityFeature,
     HVACMode,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.entity import DeviceInfo, generate_entity_id
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import generate_entity_id
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import WhirlpoolData
+from . import WhirlpoolConfigEntry
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,11 +69,11 @@ SUPPORTED_TARGET_TEMPERATURE_STEP = 1
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    config_entry: WhirlpoolConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up entry."""
-    whirlpool_data: WhirlpoolData = hass.data[DOMAIN][config_entry.entry_id]
+    whirlpool_data = config_entry.runtime_data
 
     aircons = [
         AirConEntity(
@@ -93,6 +94,7 @@ class AirConEntity(ClimateEntity):
 
     _attr_fan_modes = SUPPORTED_FAN_MODES
     _attr_has_entity_name = True
+    _attr_name = None
     _attr_hvac_modes = SUPPORTED_HVAC_MODES
     _attr_max_temp = SUPPORTED_MAX_TEMP
     _attr_min_temp = SUPPORTED_MIN_TEMP
@@ -101,6 +103,8 @@ class AirConEntity(ClimateEntity):
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.FAN_MODE
         | ClimateEntityFeature.SWING_MODE
+        | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.TURN_ON
     )
     _attr_swing_modes = SUPPORTED_SWING_MODES
     _attr_target_temperature_step = SUPPORTED_TARGET_TEMPERATURE_STEP
@@ -108,13 +112,13 @@ class AirConEntity(ClimateEntity):
 
     def __init__(
         self,
-        hass,
-        said,
-        name,
+        hass: HomeAssistant,
+        said: str,
+        name: str | None,
         backend_selector: BackendSelector,
         auth: Auth,
         session: ClientSession,
-    ):
+    ) -> None:
         """Initialize the entity."""
         self._aircon = Aircon(backend_selector, auth, said, session)
         self.entity_id = generate_entity_id(ENTITY_ID_FORMAT, said, hass=hass)

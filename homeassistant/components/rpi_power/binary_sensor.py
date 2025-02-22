@@ -1,8 +1,8 @@
-"""
-A sensor platform which detects underruns and capped status from the official Raspberry Pi Kernel.
+"""A sensor platform which detects underruns and capped status from the official Raspberry Pi Kernel.
 
 Minimal Kernel needed is 4.14+
 """
+
 import logging
 
 from rpi_bad_power import UnderVoltage, new_under_voltage
@@ -12,9 +12,9 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ DESCRIPTION_UNDER_VOLTAGE = (
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up rpi_power binary sensor."""
     under_voltage = await hass.async_add_executor_job(new_under_voltage)
@@ -55,5 +55,5 @@ class RaspberryChargerBinarySensor(BinarySensorEntity):
             if value:
                 _LOGGER.warning(DESCRIPTION_UNDER_VOLTAGE)
             else:
-                _LOGGER.info(DESCRIPTION_NORMALIZED)
+                _LOGGER.debug(DESCRIPTION_NORMALIZED)
             self._attr_is_on = value

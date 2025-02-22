@@ -1,4 +1,5 @@
 """Support for Kaiterra Temperature ahn Humidity Sensors."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,18 +18,11 @@ from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 from .const import DISPATCHER_KAITERRA, DOMAIN
 
 
-@dataclass
-class KaiterraSensorRequiredKeysMixin:
-    """Mixin for required keys."""
+@dataclass(frozen=True, kw_only=True)
+class KaiterraSensorEntityDescription(SensorEntityDescription):
+    """Class describing Renault sensor entities."""
 
     suffix: str
-
-
-@dataclass
-class KaiterraSensorEntityDescription(
-    SensorEntityDescription, KaiterraSensorRequiredKeysMixin
-):
-    """Class describing Renault sensor entities."""
 
 
 SENSORS = [
@@ -71,7 +65,7 @@ class KaiterraSensor(SensorEntity):
 
     def __init__(
         self, api, name, device_id, description: KaiterraSensorEntityDescription
-    ):
+    ) -> None:
         """Initialize the sensor."""
         self._api = api
         self._device_id = device_id

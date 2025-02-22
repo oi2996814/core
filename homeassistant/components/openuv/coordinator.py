@@ -1,4 +1,5 @@
 """Define an update coordinator for OpenUV."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -6,7 +7,7 @@ from typing import Any, cast
 
 from pyopenuv.errors import InvalidApiKeyError, OpenUvError
 
-from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.debounce import Debouncer
@@ -17,7 +18,7 @@ from .const import LOGGER
 DEFAULT_DEBOUNCER_COOLDOWN_SECONDS = 15 * 60
 
 
-class OpenUvCoordinator(DataUpdateCoordinator):
+class OpenUvCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Define an OpenUV data coordinator."""
 
     config_entry: ConfigEntry
@@ -37,6 +38,7 @@ class OpenUvCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             LOGGER,
+            config_entry=entry,
             name=name,
             update_method=update_method,
             request_refresh_debouncer=Debouncer(
@@ -47,7 +49,6 @@ class OpenUvCoordinator(DataUpdateCoordinator):
             ),
         )
 
-        self._entry = entry
         self.latitude = latitude
         self.longitude = longitude
 
@@ -59,15 +60,5 @@ class OpenUvCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed("Invalid API key") from err
         except OpenUvError as err:
             raise UpdateFailed(str(err)) from err
-
-        # OpenUV uses HTTP 403 to indicate both an invalid API key and an API key that
-        # has hit its daily/monthly limit; both cases will result in a reauth flow. If
-        # coordinator update succeeds after a reauth flow has been started, terminate
-        # it:
-        if reauth_flow := next(
-            iter(self._entry.async_get_active_flows(self.hass, {SOURCE_REAUTH})),
-            None,
-        ):
-            self.hass.config_entries.flow.async_abort(reauth_flow["flow_id"])
 
         return cast(dict[str, Any], data["result"])
